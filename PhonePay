@@ -1,0 +1,765 @@
+# libraries used:
+import pandas as pd
+import os
+import json
+import pymysql
+import numpy as np
+import streamlit as st
+import plotly.graph_objects as go
+import plotly.express as px
+
+#importing os and executing Git
+import os
+os.environ['GIT_PYTHON_GIT_EXECUTABLE'] = r"C:\\Program Files\\Git\bin\\git.exe"
+
+# Github Cloning
+try:
+    from git import Repo
+    repository_url = "https://github.com/PhonePe/pulse.git"
+    destnation_directory = "C:\\Users\\LENOVO\\OneDrive\\Desktop\\Phonepay Project\\data"
+    Repo.clone_from(repository_url,destnation_directory)
+except:
+    pass  
+
+
+#Extraction of Aggregate User Data:
+path = "C:\\Users\\LENOVO\\OneDrive\\Desktop\\Phonepay Project\\data\\data\\aggregated\\user\\country\\india\\state"
+Aggregate_state_user=os.listdir(path)
+
+DataSet_Agg_User = {"State":[], "Year":[],"Quater":[],"Mobile_Brand":[],"Usage_Count":[],"Percentage_of_Usage":[]}
+
+
+for St_name in Aggregate_state_user:
+    Path_St_name = path+"\\"+St_name
+    Aggregate_yr=os.listdir(Path_St_name)
+    for Yr in Aggregate_yr:
+        Path_Yr = Path_St_name+"\\"+Yr
+        Aggregate_Quater =os.listdir(Path_Yr)
+        for Qr in Aggregate_Quater:
+            Path_Quater = Path_Yr+"\\"+Qr
+            Agg_Data = open(Path_Quater,"r")
+            data = json.load(Agg_Data)            
+            users_by_device = data.get("data", {}).get("usersByDevice", [])
+            if users_by_device is not None:
+                for i in users_by_device:
+                    brand =i.get("brand")
+                    usage_count = i.get("count")
+                    percentage=i.get("percentage")
+                    DataSet_Agg_User["Mobile_Brand"].append(brand)
+                    DataSet_Agg_User["Usage_Count"].append(usage_count)
+                    DataSet_Agg_User["Percentage_of_Usage"].append(percentage)
+                    DataSet_Agg_User["State"].append(St_name)
+                    DataSet_Agg_User["Year"].append(Yr)
+                    DataSet_Agg_User["Quater"].append(int(Qr.strip('.json'))) # strip will remove ".json" and store the quater in int
+            else:
+                pass
+
+Agg_User_DF = pd.DataFrame(DataSet_Agg_User)
+Agg_User_DF["State"] = Agg_User_DF['State'].apply(lambda x: x.title() if isinstance(x, str) else x)
+Agg_User_DF["State"] = Agg_User_DF["State"].str.replace('-', ' ')
+Agg_User_DF["State"] = Agg_User_DF["State"].str.replace('Andaman & Nicobar Islands', 'Andaman & Nicobar')
+Agg_User_DF["State"] = Agg_User_DF["State"].str.replace('Dadra & Nagar Haveli & Daman & Diu', 'Dadra and Nagar Haveli and Daman and Diu')
+Agg_User_DF = Agg_User_DF.dropna()
+
+
+#Extraction of Aggregate Transaction Data
+
+path = "C:\\Users\\LENOVO\\OneDrive\\Desktop\\Phonepay Project\\data\\data\\aggregated\\transaction\\country\\india\\state"
+Aggregate_state_tran=os.listdir(path)
+
+
+DataSet_Agg_Tran={"State":[], "Year":[],"Quater":[],"Transacion_type":[], "Transacion_count":[], "Transacion_amount":[]}
+
+for St_name in Aggregate_state_tran:
+    Path_St_name = path+"\\"+St_name
+    Aggregate_yr=os.listdir(Path_St_name)
+    for Yr in Aggregate_yr:
+        Path_Yr = Path_St_name+"\\"+Yr
+        Aggregate_Quater =os.listdir(Path_Yr)
+        for Qr in Aggregate_Quater:
+            Path_Quater = Path_Yr+"\\"+Qr
+            Agg_Data = open(Path_Quater,"r")
+            data = json.load(Agg_Data)
+            for i in data['data']['transactionData']:
+                name = i["name"]
+                count= i["paymentInstruments"][0]["count"]
+                amount = i["paymentInstruments"][0]["amount"]
+                DataSet_Agg_Tran["Transacion_type"].append(name)
+                DataSet_Agg_Tran["Transacion_count"].append(count)
+                DataSet_Agg_Tran["Transacion_amount"].append(amount)
+                DataSet_Agg_Tran["State"].append(St_name)
+                DataSet_Agg_Tran["Year"].append(Yr)
+                DataSet_Agg_Tran["Quater"].append(int(Qr.strip('.json'))) # strip will remove ".json" and store the quater in int
+
+Agg_Tran_DF = pd.DataFrame(DataSet_Agg_Tran)
+Agg_Tran_DF["State"] = Agg_Tran_DF['State'].apply(lambda x: x.title() if isinstance(x, str) else x)
+Agg_Tran_DF["State"] = Agg_Tran_DF["State"].str.replace('-', ' ')
+Agg_Tran_DF["State"] = Agg_Tran_DF["State"].str.replace('Andaman & Nicobar Islands', 'Andaman & Nicobar')
+Agg_Tran_DF["State"] = Agg_Tran_DF["State"].str.replace('Dadra & Nagar Haveli & Daman & Diu', 'Dadra and Nagar Haveli and Daman and Diu')
+values_to_remove= Agg_User_DF["Mobile_Brand"].unique().tolist()
+exclude_value = 'Others'  # Value to exclude
+
+# Exclude the value to exclude from the list of values to remove
+values_to_remove = [value for value in values_to_remove if value != exclude_value]
+
+
+for value in values_to_remove:
+    Agg_Tran_DF = Agg_Tran_DF[Agg_Tran_DF['Transacion_type'] != value]
+    
+Agg_Tran_DF = Agg_Tran_DF.dropna()
+
+
+
+##Extraction of Map Transaction Data:
+path = "C:\\Users\\LENOVO\\OneDrive\\Desktop\\Phonepay Project\\data\\data\\map\\transaction\\hover\\country\\india\\state"
+Map_state_tran=os.listdir(path)
+
+DataSet_Map_Tran = {"State":[], "Year":[],"Quater":[],"State / district name":[],"Type":[],"Total number of transactions":[], "Total Amount":[]}
+
+
+for St_name in Map_state_tran:
+    Path_St_name = path+"\\"+St_name
+    Aggregate_yr=os.listdir(Path_St_name)
+    for Yr in Aggregate_yr:
+        Path_Yr = Path_St_name+"\\"+Yr
+        Aggregate_Quater =os.listdir(Path_Yr)
+        for Qr in Aggregate_Quater:
+            Path_Quater = Path_Yr+"\\"+Qr
+            Agg_Data = open(Path_Quater,"r")
+            data = json.load(Agg_Data)
+            for i in data["data"]["hoverDataList"]:
+                State_Dis = i['name']
+                type_of_Value = i["metric"][0]["type"]
+                count = i["metric"][0]["count"]
+                amount = i["metric"][0]["amount"]
+                DataSet_Map_Tran["State / district name"].append(State_Dis)
+                DataSet_Map_Tran["Type"].append(type_of_Value)
+                DataSet_Map_Tran["Total number of transactions"].append(count)
+                DataSet_Map_Tran["Total Amount"].append(amount)
+                DataSet_Map_Tran["State"].append(St_name)
+                DataSet_Map_Tran["Year"].append(Yr)
+                DataSet_Map_Tran["Quater"].append(int(Qr.strip('.json'))) # strip will remove ".json" and store the quater in int
+
+Map_Tran_DF=pd.DataFrame(DataSet_Map_Tran)
+Map_Tran_DF["State"] = Map_Tran_DF['State'].apply(lambda x: x.title() if isinstance(x, str) else x)
+Map_Tran_DF["State"] = Map_Tran_DF["State"].str.replace('-', ' ')
+Map_Tran_DF["State"] = Map_Tran_DF["State"].str.replace('Andaman & Nicobar Islands', 'Andaman & Nicobar')
+Map_Tran_DF["State"] = Map_Tran_DF["State"].str.replace('Dadra & Nagar Haveli & Daman & Diu', 'Dadra and Nagar Haveli and Daman and Diu')
+Map_Tran_DF = Map_Tran_DF.dropna()
+
+
+##Extraction of Map User Data:
+path = "C:\\Users\\LENOVO\\OneDrive\\Desktop\\Phonepay Project\\data\\data\\map\\user\\hover\\country\\india\\state"
+Map_state_user=os.listdir(path)
+
+DataSet_Map_User = {"State":[], "Year":[],"Quater":[],"State / district name":[],"Total number of users":[],"Total number of app opens":[]}
+
+for St_name in Map_state_user:
+    Path_St_name = path+"\\"+St_name
+    Aggregate_yr=os.listdir(Path_St_name)
+    for Yr in Aggregate_yr:
+        Path_Yr = Path_St_name+"\\"+Yr
+        Aggregate_Quater =os.listdir(Path_Yr)
+        for Qr in Aggregate_Quater:
+            Path_Quater = Path_Yr+"\\"+Qr
+            Agg_Data = open(Path_Quater,"r")
+            data = json.load(Agg_Data)
+            district=data["data"]["hoverData"]
+            for district_data in district:
+                user = district[district_data]["registeredUsers"]
+                app = district[district_data]["appOpens"]
+                DataSet_Map_User["State / district name"].append(district_data)
+                DataSet_Map_User["Total number of users"].append(user)
+                DataSet_Map_User["Total number of app opens"].append(app)
+                DataSet_Map_User["State"].append(St_name)
+                DataSet_Map_User["Year"].append(Yr)
+                DataSet_Map_User["Quater"].append(int(Qr.strip('.json'))) # strip will remove ".json" and store the quater in int
+
+Map_User_DF=pd.DataFrame(DataSet_Map_User)
+Map_User_DF["State"] = Map_User_DF['State'].apply(lambda x: x.title() if isinstance(x, str) else x)
+Map_User_DF["State"] = Map_User_DF["State"].str.replace('-', ' ')
+Map_User_DF["State"] = Map_User_DF["State"].str.replace('Andaman & Nicobar Islands', 'Andaman & Nicobar')
+Map_User_DF["State"] = Map_User_DF["State"].str.replace('Dadra & Nagar Haveli & Daman & Diu', 'Dadra and Nagar Haveli and Daman and Diu')
+Map_User_DF = Map_User_DF.dropna()
+
+
+##Extraction of Top Trans Data:
+
+path = "C:\\Users\\LENOVO\\OneDrive\\Desktop\\Phonepay Project\\data\\data\\top\\transaction\\country\\india\\state"
+Top_state_tran=os.listdir(path)
+
+DataSet_Top_Trans_Dis = {"State":[], "Year":[],"Quater":[],"Districts":[],"Type":[],"Total number of transactions":[],"Total value of all transactions":[]}
+DataSet_Top_Trans_Pin = {"State":[], "Year":[],"Quater":[],"Pincodes":[],"Type":[],"Total number of transactions":[],"Total value of all transactions":[]}
+
+for St_name in Top_state_tran:
+    Path_St_name = path+"\\"+St_name
+    Aggregate_yr=os.listdir(Path_St_name)
+    for Yr in Aggregate_yr:
+        Path_Yr = Path_St_name+"\\"+Yr
+        Aggregate_Quater =os.listdir(Path_Yr)
+        for Qr in Aggregate_Quater:
+            Path_Quater = Path_Yr+"\\"+Qr
+            Agg_Data = open(Path_Quater,"r")
+            data = json.load(Agg_Data)
+            datas = data["data"]["districts"]
+            if datas is not None:
+                for i in datas:
+                    districts = i["entityName"]
+                    types = i["metric"]["type"]
+                    count = i["metric"]["count"]
+                    amount = i["metric"]["amount"]
+                    DataSet_Top_Trans_Dis["Districts"].append(districts)
+                    DataSet_Top_Trans_Dis["Type"].append(types)
+                    DataSet_Top_Trans_Dis["Total number of transactions"].append(count)
+                    DataSet_Top_Trans_Dis["Total value of all transactions"].append(amount)
+                    DataSet_Top_Trans_Dis["State"].append(St_name)
+                    DataSet_Top_Trans_Dis["Year"].append(Yr)
+                    DataSet_Top_Trans_Dis["Quater"].append(int(Qr.strip('.json'))) # strip will remove ".json" and store the quater in int
+
+            pin_data = data["data"]["pincodes"]
+            if pin_data is not None:
+                for i in pin_data:
+                    pincodes = i["entityName"]
+                    types = i["metric"]["type"]
+                    count = i["metric"]["count"]
+                    amount = i["metric"]["amount"]
+                    DataSet_Top_Trans_Pin["Pincodes"].append(pincodes)
+                    DataSet_Top_Trans_Pin["Type"].append(types)
+                    DataSet_Top_Trans_Pin["Total number of transactions"].append(count)
+                    DataSet_Top_Trans_Pin["Total value of all transactions"].append(amount)
+                    DataSet_Top_Trans_Pin["State"].append(St_name)
+                    DataSet_Top_Trans_Pin["Year"].append(Yr)
+                    DataSet_Top_Trans_Pin["Quater"].append(int(Qr.strip('.json'))) # strip will remove ".json" and store the quater in int
+
+Top_Trans_Dis_DF=pd.DataFrame(DataSet_Top_Trans_Dis)
+Top_Trans_Dis_DF["State"] = Top_Trans_Dis_DF['State'].apply(lambda x: x.title() if isinstance(x, str) else x)
+Top_Trans_Dis_DF["State"] = Top_Trans_Dis_DF["State"].str.replace('-', ' ')
+Top_Trans_Dis_DF["State"] = Top_Trans_Dis_DF["State"].str.replace('Andaman & Nicobar Islands', 'Andaman & Nicobar')
+Top_Trans_Dis_DF["State"] = Top_Trans_Dis_DF["State"].str.replace('Dadra & Nagar Haveli & Daman & Diu', 'Dadra and Nagar Haveli and Daman and Diu')
+Top_Trans_Dis_DF = Top_Trans_Dis_DF.dropna()
+
+Top_Trans_Pin_DF=pd.DataFrame(DataSet_Top_Trans_Pin)
+Top_Trans_Pin_DF["State"] = Top_Trans_Pin_DF['State'].apply(lambda x: x.title() if isinstance(x, str) else x)
+Top_Trans_Pin_DF["State"] = Top_Trans_Pin_DF["State"].str.replace('-', ' ')
+Top_Trans_Pin_DF["State"] = Top_Trans_Pin_DF["State"].str.replace('Andaman & Nicobar Islands', 'Andaman & Nicobar')
+Top_Trans_Pin_DF["State"] = Top_Trans_Pin_DF["State"].str.replace('Dadra & Nagar Haveli & Daman & Diu', 'Dadra and Nagar Haveli and Daman and Diu')
+Top_Trans_Pin_DF = Top_Trans_Pin_DF.dropna()
+
+                    
+##Extraction of Top User Data:
+
+path = "C:\\Users\\LENOVO\\OneDrive\\Desktop\\Phonepay Project\\data\\data\\top\\user\\country\\india\\state"
+Top_state_user=os.listdir(path)
+
+DataSet_Top_User_Dis = {"State":[], "Year":[],"Quater":[],"Districts":[],"Users":[]}
+DataSet_Top_User_Pin = {"State":[], "Year":[],"Quater":[],"Pincodes":[],"Users":[]}
+
+for St_name in Top_state_user:
+    Path_St_name = path+"\\"+St_name
+    Aggregate_yr=os.listdir(Path_St_name)
+    for Yr in Aggregate_yr:
+        Path_Yr = Path_St_name+"\\"+Yr
+        Aggregate_Quater =os.listdir(Path_Yr)
+        for Qr in Aggregate_Quater:
+            Path_Quater = Path_Yr+"\\"+Qr
+            Agg_Data = open(Path_Quater,"r")
+            data = json.load(Agg_Data)
+            datas = data["data"]["districts"]
+            if datas is not None:
+                for i in datas:
+                    name = i["name"]
+                    user = i["registeredUsers"]
+                    DataSet_Top_User_Dis["Districts"].append(name)
+                    DataSet_Top_User_Dis["Users"].append(user)
+                    DataSet_Top_User_Dis["State"].append(St_name)
+                    DataSet_Top_User_Dis["Year"].append(Yr)
+                    DataSet_Top_User_Dis["Quater"].append(int(Qr.strip('.json'))) # strip will remove ".json" and store the quater in int
+
+            pin_data = data["data"]["pincodes"]
+            if pin_data is not None:
+                for i in pin_data:
+                    pincodes = i["name"]
+                    user = i["registeredUsers"]
+                    DataSet_Top_User_Pin["Pincodes"].append(pincodes)
+                    DataSet_Top_User_Pin["Users"].append(user)
+                    DataSet_Top_User_Pin["State"].append(St_name)
+                    DataSet_Top_User_Pin["Year"].append(Yr)
+                    DataSet_Top_User_Pin["Quater"].append(int(Qr.strip('.json'))) # strip will remove ".json" and store the quater in int
+
+Top_User_Dis_DF=pd.DataFrame(DataSet_Top_User_Dis)
+Top_User_Dis_DF["State"] = Top_User_Dis_DF['State'].apply(lambda x: x.title() if isinstance(x, str) else x)
+Top_User_Dis_DF["State"] = Top_User_Dis_DF["State"].str.replace('-', ' ')
+Top_User_Dis_DF["State"] = Top_User_Dis_DF["State"].str.replace('Andaman & Nicobar Islands', 'Andaman & Nicobar')
+Top_User_Dis_DF["State"] = Top_User_Dis_DF["State"].str.replace('Dadra & Nagar Haveli & Daman & Diu', 'Dadra and Nagar Haveli and Daman and Diu')
+Top_User_Dis_DF = Top_User_Dis_DF.dropna()
+
+Top_User_Pin_DF=pd.DataFrame(DataSet_Top_User_Pin)
+Top_User_Pin_DF["State"] = Top_User_Pin_DF['State'].apply(lambda x: x.title() if isinstance(x, str) else x)
+Top_User_Pin_DF["State"] = Top_User_Pin_DF["State"].str.replace('-', ' ')
+Top_User_Pin_DF["State"] = Top_User_Pin_DF["State"].str.replace('Andaman & Nicobar Islands', 'Andaman & Nicobar')
+Top_User_Pin_DF["State"] = Top_User_Pin_DF["State"].str.replace('Dadra & Nagar Haveli & Daman & Diu', 'Dadra and Nagar Haveli and Daman and Diu')
+Top_User_Pin_DF = Top_User_Pin_DF.dropna()
+                    
+#Connecting to data base:
+myconnection = pymysql.connect(host='127.0.0.1',user='root',passwd='gowri@2903')
+cur = myconnection.cursor()
+try:
+    cur.execute("create database Phone_Pay_Database")
+except:
+    pass 
+myconnection = pymysql.connect(host='127.0.0.1',user='root',passwd='gowri@2903',database="Phone_Pay_Database")
+cur = myconnection.cursor()
+
+#creating the data(Aggregate Transaction Data) table in sql:
+myconnection = pymysql.connect(host='127.0.0.1',user='root',passwd='gowri@2903',database="Phone_Pay_Database")
+cur = myconnection.cursor()
+
+drop_query = " drop table if exists Agg_Trans_Data"
+cur.execute(drop_query)
+cur.execute("create table Agg_Trans_Data(State text,Year int,Quater int,Transacion_type text,Transacion_count int, Transacion_amount float)")
+sql = "insert into Agg_Trans_Data values(%s,%s,%s,%s,%s,%s)"
+
+for i in range(0,len(Agg_Tran_DF)):
+    cur.execute(sql,tuple(Agg_Tran_DF.iloc[i]))
+    myconnection.commit()
+
+
+#creating the data(Aggregate User Data) table in sql:
+myconnection = pymysql.connect(host='127.0.0.1',user='root',passwd='gowri@2903',database="Phone_Pay_Database")
+cur = myconnection.cursor()
+
+drop_query = " drop table if exists Agg_Users_Data"
+cur.execute(drop_query)
+cur.execute("create table Agg_Users_Data(State text,Year int,Quater int,Mobile_Brand text,Usage_Count int, Percentage_of_Usage float)")
+sql = "insert into Agg_Users_Data values(%s,%s,%s,%s,%s,%s)"
+
+for i in range(0,len(Agg_User_DF)):
+    cur.execute(sql,tuple(Agg_User_DF.iloc[i]))
+    myconnection.commit()
+
+#creating the data(Map Transaction Data) table in sql:
+myconnection = pymysql.connect(host='127.0.0.1',user='root',passwd='gowri@2903',database="Phone_Pay_Database")
+cur = myconnection.cursor()
+
+drop_query = " drop table if exists Map_Trans_Data"
+cur.execute(drop_query)
+cur.execute("create table Map_Trans_Data(State text,Year int,Quater int,District text,Type text,Total_number_of_transactions int, Total_Amount float)")
+sql = "insert into Map_Trans_Data values(%s,%s,%s,%s,%s,%s,%s)"
+
+for i in range(0,len(Map_Tran_DF)):
+    cur.execute(sql,tuple(Map_Tran_DF.iloc[i]))
+    myconnection.commit()       
+
+
+#creating the data(Map User Data) table in sql:
+myconnection = pymysql.connect(host='127.0.0.1',user='root',passwd='gowri@2903',database="Phone_Pay_Database")
+cur = myconnection.cursor()
+
+drop_query = " drop table if exists Map_Users_Data"
+cur.execute(drop_query)
+cur.execute("create table Map_Users_Data(State text,Year int,Quater int,District text,Total_number_of_users int,Total_number_of_app_opens int)")
+sql = "insert into Map_Users_Data values(%s,%s,%s,%s,%s,%s)"
+
+for i in range(0,len(Map_User_DF)):
+    cur.execute(sql,tuple(Map_User_DF.iloc[i]))
+    myconnection.commit()     
+
+#creating the data(Top Transaction Dis and Pin Data) table in sql:
+myconnection = pymysql.connect(host='127.0.0.1',user='root',passwd='gowri@2903',database="Phone_Pay_Database")
+cur = myconnection.cursor()
+
+drop_query = " drop table if exists Top_Trans_Dis_Data"
+cur.execute(drop_query)
+cur.execute("create table Top_Trans_Dis_Data(State text,Year int,Quater int,District text,Type text,Total_number_of_transactions int, Total_value_of_all_transactions float)")
+sql = "insert into Top_Trans_Dis_Data values(%s,%s,%s,%s,%s,%s,%s)"
+
+for i in range(0,len(Top_Trans_Dis_DF)):
+    cur.execute(sql,tuple(Top_Trans_Dis_DF.iloc[i]))
+    myconnection.commit()
+
+drop_query = " drop table if exists Top_Trans_Pin_Data"
+cur.execute(drop_query)
+cur.execute("create table Top_Trans_Pin_Data(State text,Year int,Quater int,Pincodes int,Type text,Total_number_of_transactions int, Total_value_of_all_transactions float)")
+sql = "insert into Top_Trans_Pin_Data values(%s,%s,%s,%s,%s,%s,%s)"
+
+for i in range(0,len(Top_Trans_Pin_DF)):
+    cur.execute(sql,tuple(Top_Trans_Pin_DF.iloc[i]))
+    myconnection.commit()    
+
+#creating the data(Top User Dis and Pin Data) table in sql:
+myconnection = pymysql.connect(host='127.0.0.1',user='root',passwd='gowri@2903',database="Phone_Pay_Database")
+cur = myconnection.cursor()
+
+drop_query = " drop table if exists Top_Users_Dis_Data"
+cur.execute(drop_query)
+cur.execute("create table Top_Users_Dis_Data(State text,Year int,Quater int,District text,Users int)")
+sql = "insert into Top_Users_Dis_Data values(%s,%s,%s,%s,%s)"
+
+for i in range(0,len(Top_User_Dis_DF)):
+    cur.execute(sql,tuple(Top_User_Dis_DF.iloc[i]))
+    myconnection.commit()
+
+drop_query = " drop table if exists Top_Users_Pin_Data"
+cur.execute(drop_query)
+cur.execute("create table Top_Users_Pin_Data(State text,Year int,Quater int,Pincodes int,Users int)")
+sql = "insert into Top_Users_Pin_Data values(%s,%s,%s,%s,%s)"
+
+for i in range(0,len(Top_User_Pin_DF)):
+    cur.execute(sql,tuple(Top_User_Pin_DF.iloc[i]))
+    myconnection.commit()
+
+def Data_Analysis_1():
+   myconnection = pymysql.connect(host='127.0.0.1', user='root', passwd='gowri@2903', database="Phone_Pay_Database")
+   cur = myconnection.cursor()
+
+   # Execute SQL query and fetch result
+   query = "select state, sum(transacion_amount) as amount from agg_trans_data group by 1 order by amount desc limit 10;"
+   df = pd.read_sql_query(query, myconnection).dropna()
+   
+   fig = px.bar(df, x='state', y='amount')
+   st.plotly_chart(fig) 
+
+
+def Data_Analysis_2():
+    myconnection = pymysql.connect(host='127.0.0.1', user='root', passwd='gowri@2903', database="Phone_Pay_Database")
+
+    # Execute SQL query and fetch result
+    query = "select Transacion_type , sum(transacion_count) as count from agg_trans_data group by 1 order by count desc;"
+    df = pd.read_sql_query(query, myconnection).dropna()
+    
+
+    fig = px.pie(df, values='count', names='Transacion_type', 
+                title='Top transaction count and type')
+    st.plotly_chart(fig)
+
+
+def Data_Analysis_3():
+    # Connect to MySQL database
+    myconnection = pymysql.connect(host='127.0.0.1', user='root', passwd='gowri@2903', database="Phone_Pay_Database")
+
+    # Execute SQL query and fetch result
+    query = "SELECT  mobile_brand, SUM(usage_count) AS count FROM agg_users_data GROUP BY 1 ORDER BY count;"
+    df = pd.read_sql_query(query, myconnection).dropna()
+
+    fig = go.Figure(data=[go.Pie(labels=df['mobile_brand'], values=df['count'], hole=0.3)])
+
+    fig.update_layout(
+        title= "Mobile Brand vs Count (Pie Chart)"
+    )
+
+    st.plotly_chart(fig)
+
+def Data_Analysis_4():
+    myconnection = pymysql.connect(host='127.0.0.1', user='root', passwd='gowri@2903', database="Phone_Pay_Database")
+    # Execute SQL query and fetch result
+
+    query = '''select state, district, concat(state," - ",district) as State_District, sum(Total_value_of_all_transactions) as amount from top_trans_dis_data 
+    group by 1,2 order by amount desc limit 10;'''
+    df = pd.read_sql_query(query, myconnection).dropna()
+    
+    fig = px.bar(df, x='State_District', y='amount')
+    st.plotly_chart(fig)
+
+def Data_Analysis_5():
+    myconnection = pymysql.connect(host='127.0.0.1', user='root', passwd='gowri@2903', database="Phone_Pay_Database")
+
+
+    # Execute SQL query and fetch result
+    query = "select Transacion_type , sum(transacion_count) as count from agg_trans_data group by 1 order by count desc;"
+    df = pd.read_sql_query(query, myconnection).dropna()
+
+
+    fig = px.pie(df, values='count', names='Transacion_type', 
+                title='Top transaction count and type')
+    st.plotly_chart(fig)
+
+def Data_Analysis_6():
+    myconnection = pymysql.connect(host='127.0.0.1', user='root', passwd='gowri@2903', database="Phone_Pay_Database")
+
+
+    # Execute SQL query and fetch result
+    query = '''select state, district, concat(state," - ",district) as State_District, sum(Total_value_of_all_transactions) as amount from top_trans_dis_data 
+    group by 1,2 order by amount limit 10;'''
+    df = pd.read_sql_query(query, myconnection).dropna()
+
+    fig = px.bar(df, x='State_District', y='amount')
+    st.plotly_chart(fig)
+
+def Data_Analysis_7():
+
+    # Connect to MySQL database
+    myconnection = pymysql.connect(host='127.0.0.1', user='root', passwd='gowri@2903', database="Phone_Pay_Database")
+
+    # Execute SQL query and fetch result
+    query = '''SELECT state, district, CONCAT(state, " - ", district) AS State_District, 
+            SUM(Total_value_of_all_transactions) AS amount 
+            FROM top_trans_dis_data 
+            GROUP BY state, district 
+            ORDER BY amount 
+            LIMIT 10;'''
+
+    df = pd.read_sql_query(query, myconnection).dropna()
+
+    fig = px.bar(df, x='State_District', y='amount', title='Top 10 State-District Pairs by Transaction Amount')
+
+    st.plotly_chart(fig)
+
+
+def Geo_Visualization_1():
+    myconnection = pymysql.connect(host='127.0.0.1',user='root',passwd='gowri@2903',database="Phone_Pay_Database")
+    cur = myconnection.cursor()
+    sql_map_tran= pd.read_sql_query("select state, sum(Total_Amount) as Amount from Map_Trans_Data group by state",myconnection)
+    sql_map_tran_df = pd.DataFrame(sql_map_tran)
+
+    # Sample DataFrame
+    df = sql_map_tran_df
+
+    ## Create choropleth map
+    fig = px.choropleth(
+        df,
+        geojson="https://gist.githubusercontent.com/jbrobst/56c13bbbf9d97d187fea01ca62ea5112/raw/e388c4cae20aa53cb5090210a42ebb9b765c0a36/india_states.geojson",  # Provide the URL or local path to the GeoJSON file for India
+        featureidkey='properties.ST_NM',  # Key in GeoJSON file corresponding to state names
+        locations='state',  # Mapped state names from DataFrame
+        color='Amount',  # Column containing the color value
+        color_continuous_scale='Reds',  # Color scale
+        hover_name='state',  # To display original state names on hover
+        title='Transaction Amount in Indian States'  # Title of the plot
+    )
+
+    # Customize layout
+    fig.update_geos(fitbounds="locations", visible=False)
+
+    # Show the figure
+    st.plotly_chart(fig)
+
+
+def Geo_Visualization_2():
+    myconnection = pymysql.connect(host='127.0.0.1',user='root',passwd='gowri@2903',database="Phone_Pay_Database")
+    cur = myconnection.cursor()
+    sql_map_user= pd.read_sql_query("select state, sum(Total_number_of_users) as Users from Map_Users_Data group by state",myconnection)
+    sql_map_user_df = pd.DataFrame(sql_map_user)
+
+    
+    # Sample DataFrame
+    df = sql_map_user_df
+
+    ## Create choropleth map
+    fig = px.choropleth(
+        df,
+        geojson="https://gist.githubusercontent.com/jbrobst/56c13bbbf9d97d187fea01ca62ea5112/raw/e388c4cae20aa53cb5090210a42ebb9b765c0a36/india_states.geojson",  # Provide the URL or local path to the GeoJSON file for India
+        featureidkey='properties.ST_NM',  # Key in GeoJSON file corresponding to state names
+        locations='state',  # Mapped state names from DataFrame
+        color='Users',  # Column containing the color value
+        color_continuous_scale='Reds',  # Color scale
+        hover_name='state',  # To display original state names on hover
+        title='Usage_Count in Indian States'  # Title of the plot
+    )
+
+    # Customize layout
+    fig.update_geos(fitbounds="locations", visible=False)
+
+    # Show the figure
+    st.plotly_chart(fig)
+
+
+def Visualizatio_Data_1():
+    
+    # Connect to MySQL database
+    myconnection = pymysql.connect(host='127.0.0.1', user='root', passwd='gowri@2903', database="Phone_Pay_Database")
+
+    # Execute SQL query and fetch result
+    query = "SELECT state, year, quater, SUM(transacion_amount) AS amount FROM agg_trans_data GROUP BY state, year, quater;"
+    df = pd.read_sql_query(query, myconnection)
+
+    fig = px.bar(df, x='quater', y='amount', animation_frame='year', 
+                color='state', title='Total Transaction Amount by Quarter (Animated by Year)',
+                labels={'quater': 'Quarter', 'amount': 'Transaction Amount', 'year': 'Year'})
+    
+    st.plotly_chart(fig)
+
+def Visualizatio_Data_2():
+
+    myconnection = pymysql.connect(host='127.0.0.1', user='root', passwd='gowri@2903', database="Phone_Pay_Database")
+
+    # Execute SQL query and fetch result
+    query = """
+    SELECT state, year, transacion_type, SUM(transacion_count) AS transacion_count
+    FROM agg_trans_data
+    GROUP BY state, year, transacion_type;
+    """
+    df = pd.read_sql_query(query, myconnection)
+
+    fig = px.line(df, x='year', y='transacion_count', color='transacion_type',
+                title='Trend of Transaction Counts by Year and Transaction Type')
+    
+    st.plotly_chart(fig)
+
+def Visualizatio_Data_3():
+
+    myconnection = pymysql.connect(host='127.0.0.1', user='root', passwd='gowri@2903', database="Phone_Pay_Database")
+
+    # Execute SQL query and fetch result
+    query = "select mobile_brand,sum(usage_count) as count from agg_users_data group by 1;"
+    df = pd.read_sql_query(query, myconnection)
+
+    fig = px.pie(df, values='count', names='mobile_brand', 
+                title='Usage of Mobile Brands')
+    
+    st.plotly_chart(fig)
+
+def Visualizatio_Data_4():
+
+    myconnection = pymysql.connect(host='127.0.0.1', user='root', passwd='gowri@2903', database="Phone_Pay_Database")
+
+    # Execute SQL query and fetch result
+    query = "SELECT state, year, District, sum(Total_value_of_all_transactions) as amount from top_trans_dis_data group by 1,2,3 ;"
+    df = pd.read_sql_query(query, myconnection).dropna()
+
+    fig = px.line(df, x='year', y='amount', color='state', line_group='District',
+                labels={'year': 'Year', 'amount': 'Amount', 'state': 'State', 'District': 'District'},
+                title='Amount by Year for each State and District')
+
+    fig.update_layout(xaxis_title='Year', yaxis_title='Amount', legend_title='State', hovermode='closest')
+
+    st.plotly_chart(fig)
+
+def Visualizatio_Data_5():
+
+    myconnection = pymysql.connect(host='127.0.0.1', user='root', passwd='gowri@2903', database="Phone_Pay_Database")
+
+    # Execute SQL query and fetch result
+    query = "select state, year ,quater,sum(Transacion_amount) as Amount from agg_trans_data group by 1,2,3;"
+    df = pd.read_sql_query(query, myconnection)
+
+    # Get unique states and years
+    unique_states = df['state'].unique()
+    unique_years = df['year'].unique()
+
+    # Create a box plot for each state and each year
+    for state in unique_states:
+        for year in unique_years:
+            # Filter data for the current state and year
+            data_state_year = df[(df['state'] == state) & (df['year'] == year)]
+            
+            # Check if data exists for the current state and year
+            if not data_state_year.empty:
+                # Create box plot using Plotly Express
+                fig = px.box(data_state_year, x='Amount', points='all', title=f'Box Plot for Transaction Amounts in {state} - {year}')
+                fig.update_layout(xaxis_title='Transaction Amount', yaxis_title='Count')
+                st.plotly_chart(fig)
+
+def Visualizatio_Data_6():
+    # Connect to MySQL database
+    myconnection = pymysql.connect(host='127.0.0.1', user='root', passwd='gowri@2903', database="Phone_Pay_Database")
+
+    # Execute SQL query and fetch result
+    query = "select state,year,quater,sum(Transacion_count) as count from agg_trans_data group by 1,2,3;"
+    df = pd.read_sql_query(query, myconnection)
+
+    # Get unique states and years
+    unique_states = df['state'].unique()
+    unique_years = df['year'].unique()
+
+    # Create a violin plot for each combination of state and year
+    for state in unique_states:
+        for year in unique_years:
+            data_state_year = df[(df['state'] == state) & (df['year'] == year)]
+            
+            # Check if data exists for the current state and year
+            if not data_state_year.empty:
+                # Create plot using Plotly Express
+                fig = px.violin(data_state_year, y='count',
+                                title=f'Violin Plot for Transaction Counts by State and Year: {state}, {year}',
+                                box=True, points="all", hover_data=df.columns)
+                
+                fig.update_layout(xaxis_title='Transaction Type', yaxis_title='Transaction Count')
+                st.plotly_chart(fig)
+
+
+
+#streamlit Part:
+
+
+st.set_page_config(page_title="Phonepe Pulse Data Visualization and Exploration",page_icon=":bar_chart:",layout="wide")
+st.title(":chart_with_upwards_trend: Phonepe Pulse Data Visualization and Exploration")
+col1, col2, col3 = st.columns(3)
+with col1:
+   st.header(":briefcase: Data Evaluation")
+   phonepay_data = st.write(":moneybag: PhonePay_Data_Analysis")
+   if st.button("Top 10 states by transaction volume."):
+      Data_Analysis_1()
+
+   if st.button("Top transaction count and type"):
+       Data_Analysis_2()
+       
+   if st.button("Top brands by usage in each year"):
+       Data_Analysis_3()
+
+   if st.button("Top 10 districts by transaction volume"):
+       Data_Analysis_4()
+       
+   if st.button("Bottom 10 states by transaction volume"):
+       Data_Analysis_5()
+
+   if st.button("Bottom brands by usage in each year"):
+       Data_Analysis_6()
+       
+   if st.button("Bottom 10 districts by transaction volume"):
+       Data_Analysis_7()
+       
+with col2:
+   st.header(":earth_asia: Geo Visualization")
+   tab1, tab2= st.tabs(["Transaction Visualization", "User Visualization"])
+with tab1:
+   if st.button("Geo Visualization - Transaction_Data"):
+       Geo_Visualization_1()
+
+with tab2:
+   if st.button("Geo Visualization - User_Data "):
+       Geo_Visualization_2()
+
+with col3:
+   st.header(":bar_chart: Data Visualiation")
+   if st.checkbox(":open_book: Insights"):
+       st.write('''Temporal Trends: Analysis of transaction amounts across different years and quarters can reveal temporal \ntrends in consumer behavior or economic activity.\n\n
+                    Seasonal Variations: By examining transaction amounts across quarters, seasonal variations in spending patterns can be identified.\n
+                            - Transacion type-[Merchant payments, Peer-to-peer payments, Recharge & bill payments, Others, Financial Services]\n
+                            - Merchant payments are the predominant transaction type across the entire dataset.\n\n
+                Regional Disparities: Comparing transaction amounts across states provides insights into regional disparities in economic activity or market demand. Variations in transaction amounts between different states may indicate differences in purchasing power, market maturity, or consumer preferences.\n
+                        Statewise:\n
+                            - "Telangana" leads in transaction amounts among states.\n
+                            - "Lakshadweep" records the lowest transaction amounts among the states.\n
+                        DistrictWise:\n
+                            - "Karnataka - bengaluru urban" leads in transaction amounts among districts in states.\n
+                            - "Arunachal Pradesh - lower siang" records the lowest transaction amounts among the districts in states.\n\n
+                Business Performance: Businesses operating in multiple states can use this data to assess their performance across different regions over time. Identifying states or quarters with higher transaction amounts can help businesses allocate resources more effectively and target marketing efforts towards regions with higher demand.\n
+                        - users:\n
+                            - Maharashtra has the highest number of phonepay users in the states.\n
+                            - Lakshadweep has the lowest number of phonepay users in the states.\n
+                Forecasting and Planning: Historical transaction data can be used to develop predictive models for forecasting future transaction amounts. Businesses can utilize these insights for strategic planning, inventory management, and resource allocation.\n\n
+                Comparative Analysis: Comparing transaction amounts across different states can provide insights into regional disparities or variations in consumer behavior. Understanding these differences can inform strategic decision-making for businesses or policymakers.\n\n
+                Trend Analysis: Tracking changes in transaction amounts over time for these top states can reveal trends in consumer spending patterns or market dynamics.")
+                ''')
+Show_Table=st.selectbox(":chart_with_downwards_trend: Visualization of Data",("Total Transaction Amount by Quarter (Animated by Year)",
+                                                "Trend of Transaction Counts by Year and Transaction Type",
+                                                "Usage of Mobile Brands",
+                                                "Amount by Year for each State and District",
+                                                "Statistical Representation - State vs Year vs Amount",
+                                                "Statistical Representation - State vs year vs count"))
+if Show_Table =="Total Transaction Amount by Quarter (Animated by Year)":
+       Visualizatio_Data_1()   
+
+elif Show_Table == "Trend of Transaction Counts by Year and Transaction Type":
+       Visualizatio_Data_2()
+
+elif Show_Table == "Usage of Mobile Brands":
+    Visualizatio_Data_3()
+
+elif Show_Table == "Amount by Year for each State and District":
+    Visualizatio_Data_4()
+
+elif Show_Table == "Statistical Representation - State vs Year vs Amount":
+    Visualizatio_Data_5()
+
+elif Show_Table == "Statistical Representation - State vs year vs count":
+    Visualizatio_Data_6()
